@@ -58,6 +58,25 @@ class ViewController: UICollectionViewController, UINavigationControllerDelegate
         
         images.insert(image, at: 0)
         collectionView.reloadData()
+        
+        // Check if we have an active session we can use.
+        guard let mcSession =  mcSession else { return }
+        // Check if there are any peers to send to.
+        if mcSession.connectedPeers.count > 0 {
+            // Convert the new image to a Data object.
+            if let imageData = image.pngData() {
+                // Send it to all peers, ensuring it gets delivered.
+                do {
+                    // the code to ensure data gets sent intact to all peers, as opposed to having some parts lost in the ether, is just to use transmission mode .reliable – nothing more.
+                    try mcSession.send(imageData, toPeers: mcSession.connectedPeers, with: .reliable)
+                } catch {
+                    // Show an error message if there's a problem
+                    let ac = UIAlertController(title: "Send error", message: error.localizedDescription, preferredStyle: .alert)
+                    ac.addAction(UIAlertAction(title: "OK", style: .default))
+                    present(ac, animated: true)
+                }
+            }
+        }
     }
     
     // ask users whether they want to connect to an existing session with other people, or whether they want to create their own
@@ -83,5 +102,56 @@ class ViewController: UICollectionViewController, UINavigationControllerDelegate
         mcBrowser.delegate = self
         present(mcBrowser, animated: true)
     }
+    
+    // the two protocols combined have seven required methods that you need to implement just to be compatible
+    // for this project you can effectively ignore three of them:
+    func session(_ session: MCSession, didReceive stream: InputStream, withName streamName: String, fromPeer peerID: MCPeerID) {
+
+    }
+    
+    func session(_ session: MCSession, didStartReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, with progress: Progress) {
+        <#code#>
+    }
+    
+    func session(_ session: MCSession, didFinishReceivingResourceWithName resourceName: String, fromPeer peerID: MCPeerID, at localURL: URL?, withError error: (any Error)?) {
+        <#code#>
+    }
+    
+    // The two methods we're going to implement that are trivial are both for the multipeer browser
+    // one is called when it finishes successfully, and one when the user cancels
+    func browserViewControllerDidFinish(_ browserViewController: MCBrowserViewController) {
+        dismiss(animated: true)
+    }
+    
+    func browserViewControllerWasCancelled(_ browserViewController: MCBrowserViewController) {
+        dismiss(animated: true)
+    }
+    
+    // method for diagnostic information: is someone connecting, are they now connected, or have they just disconnected
+    func session(_ session: MCSession, peer peerID: MCPeerID, didChange state: MCSessionState) {
+        switch state {
+        case .connected:
+            print("Connected: \(peerID.displayName)")
+        case .connecting:
+            print("Connecting: \(peerID.displayName)")
+        case .notConnected:
+            print("Not Connected: \(peerID.displayName)")
+        @unknown default:
+            print("Unknown state received: \(peerID.displayName)")
+        }
+    }
+    
+    // Once the data arrives at each peer, the method will get called with that data, at which point we can create a UIImage from it and add it to our images array
+    func session(_ session: MCSession, didReceive data: Data, fromPeer peerID: MCPeerID) {
+        DispatchQueue.main.async { [weak self] in
+            if let image = UIImage(data: data) {
+                self?.images.insert(image, at: 0)
+                self?.collectionView.reloadData()
+            }
+        }
+    }
 }
 
+// The advertiser assistant takes care of telling the world that our app is looking for connections, as well as handling people who want to join.
+// The browser controller takes care of finding all compatible sessions, and sending invitations.
+// Our job is just to hook it all together with a nice user interface
